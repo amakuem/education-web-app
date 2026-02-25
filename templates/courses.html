@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Курсы - Stepik{% endblock %}
+
+{% block content %}
+<h1>Наши курсы</h1>
+
+<div class="courses-grid">
+    <div class="course-card">
+        <h3>Python для начинающих</h3>
+        <p>Основы программирования на Python</p>
+        <span class="course-level">Уровень: Начинающий</span>
+        <button class="btn-small">Подробнее</button>
+    </div>
+
+    <div class="course-card">
+        <h3>Web разработка</h3>
+        <p>HTML, CSS, JavaScript и Flask</p>
+        <span class="course-level">Уровень: Средний</span>
+        <button class="btn-small">Подробнее</button>
+    </div>
+
+    <div class="course-card">
+        <h3>Базы данных</h3>
+        <p>SQL и работа с БД</p>
+        <span class="course-level">Уровень: Продвинутый</span>
+        <button class="btn-small">Подробнее</button>
+    </div>
+</div>
+{% endblock %}
