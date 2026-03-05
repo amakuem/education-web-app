@@ -1,0 +1,132 @@
+/* Базовые настройки страницы */
+.course-page-wrapper {
+    display: flex;
+    gap: 25px;
+    align-items: flex-start;
+}
+
+/* САЙДБАР */
+.sidebar-course {
+    width: 280px;
+    min-width: 280px;
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+
+.back-link {
+    display: block;
+    margin-bottom: 20px;
+    color: #666;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.module-name {
+    font-weight: 700;
+    font-size: 15px;
+    margin: 20px 0 10px 0;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.lesson-link { 
+    display: block; 
+    padding: 10px 12px; 
+    margin-bottom: 4px; 
+    color: #495057; 
+    text-decoration: none; 
+    font-size: 14px; 
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+
+.lesson-link:hover { background: #e9ecef; }
+
+.active-lesson { 
+    background: #ffffff !important; 
+    color: #32c056 !important; 
+    border: 1px solid #32c056; 
+    font-weight: 600;
+}
+
+/* КОНТЕНТНАЯ ОБЛАСТЬ */
+.main-content { 
+    flex: 1; 
+    padding: 40px; 
+    overflow-y: auto; 
+    display: flex; 
+    flex-direction: column; 
+    background: #fff;
+}
+
+/* ШАГИ (STEP NAVIGATION) */
+.step-navigation { 
+    display: flex; 
+    justify-content: center; 
+    gap: 12px; 
+    margin-bottom: 30px; 
+    padding-bottom: 20px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.step-icon { 
+    width: 36px; 
+    height: 36px; 
+    border: 2px solid #e0e0e0; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    text-decoration: none; 
+    color: #888; 
+    border-radius: 6px;
+    font-weight: 600;
+    transition: 0.2s;
+}
+
+.step-icon:hover { border-color: #32c056; color: #32c056; }
+
+.step-icon.active { 
+    background: #32c056; 
+    color: white; 
+    border-color: #32c056; 
+}
+
+.step-icon.quiz-type { border-radius: 50%; } /* Тесты круглые */
+
+/* ТЕКСТ И КОД */
+.section-text { margin-bottom: 20px; line-height: 1.7; font-size: 17px; color: #333; }
+.section-code { 
+    background: #282c34; 
+    color: #abb2bf; 
+    padding: 20px; 
+    border-radius: 8px; 
+    font-family: 'Fira Code', 'Courier New', monospace; 
+    margin-bottom: 25px;
+    overflow-x: auto;
+}
+
+/* КНОПКИ НАВИГАЦИИ */
+.nav-buttons { 
+    margin-top: 50px; 
+    padding: 20px 0;
+    display: flex; 
+    justify-content: space-between; 
+    border-top: 1px solid #f0f0f0;
+}
+
+.btn { 
+    padding: 12px 24px; 
+    text-decoration: none; 
+    border-radius: 6px; 
+    font-weight: 600;
+    transition: opacity 0.2s;
+}
+
+.btn:hover { opacity: 0.9; }
+.btn-primary { background: #32c056; color: white; }
+.btn-secondary { background: #6c757d; color: white; }
+
+.finish-msg { color: #32c056; font-weight: bold; font-size: 18px; }

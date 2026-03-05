@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Моё обучение{% endblock %}
+
+{% block content %}
+<div class="dashboard-wrapper">
+    <section class="dashboard-section">
+        <h2>📚 Мои курсы</h2>
+        <div class="courses-grid">
+            {% for course in my_courses %}
+            <div class="course-card">
+                <div class="course-card-content">
+                    <h3>{{ course.title }}</h3>
+                    <p>{{ course.description[:100] }}...</p>
+                    <a href="{{ url_for('course_detail', course_id=course.id) }}" class="btn">Продолжить</a>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>Вы еще не записаны ни на один курс.</p>
+                <a href="/courses" class="btn-link">Найти что-нибудь интересное</a>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="dashboard-section" style="margin-top: 50px;">
+        <h2>🌟 Доступные курсы</h2>
+        <div class="courses-grid">
+            {% for course in available %}
+            <div class="course-card">
+                <div class="course-card-content">
+                    <h3>{{ course.title }}</h3>
+                    <span class="course-price">
+                        {{ 'Бесплатно' if course.price == 0 else course.price ~ ' ₽' }}
+                    </span>
+                    <p>{{ course.description[:80] }}...</p>
+                    <a href="{{ url_for('course_detail', course_id=course.id) }}" class="btn-outline">Подробнее</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}

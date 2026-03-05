@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Stepik-like Site{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/course_detail.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/lesson.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/student_dashboard.css') }}">
 </head>
 <body>
     <nav class="navbar">
@@ -14,6 +17,18 @@
                 <li class="nav-item"><a href="/" class="nav-link">Главная</a></li>
                 <li class="nav-item"><a href="/courses" class="nav-link">Курсы</a></li>
                 <li class="nav-item"><a href="/about" class="nav-link">О сайте</a></li>
+
+                {% if session.get('user_id') %}
+                    <li class="nav-item">
+                        <a href="/dashboard" class="nav-link" style="color: #32c056; font-weight: bold;">
+                            👤 Профиль ({{ session.get('first_name', 'Личный кабинет') }})
+                        </a>
+                    </li>
+                    <li class="nav-item"><a href="/logout" class="nav-link">Выход</a></li>
+                {% else %}
+                    <li class="nav-item"><a href="/login" class="nav-link">Вход</a></li>
+                {% endif %}
+
             </ul>
         </div>
     </nav>

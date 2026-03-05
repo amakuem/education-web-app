@@ -1,26 +1,16 @@
 {% extends "base.html" %}
-
-{% block title %}Главная - Stepik{% endblock %}
-
 {% block content %}
-<section class="hero">
-    <h1>Добро пожаловать на Stepik</h1>
-    <p>Обучайтесь программированию и другим навыкам онлайн</p>
-    <a href="/courses" class="btn">Смотреть курсы</a>
-</section>
-
-<section class="features">
-    <div class="feature-card">
-        <h3>📖 Интерактивные курсы</h3>
-        <p>Учитесь с интерактивными задачами и примерами кода</p>
+<body>
+    <h1>Доступные курсы</h1>
+    <div class="courses-grid">
+        {% for course in courses %}
+        <div class="course-card">
+            <h3>{{ course.title }}</h3>
+            <p>Категория: {{ course.category_name }}</p>
+            <p>Цена: {{ course.price }} руб.</p>
+            <a href="{{ url_for('course_detail', course_id=course.id) }}">Подробнее</a>
+        </div>
+        {% endfor %}
     </div>
-    <div class="feature-card">
-        <h3>🏆 Сертификаты</h3>
-        <p>Получайте сертификаты после завершения курсов</p>
-    </div>
-    <div class="feature-card">
-        <h3>👥 Сообщество</h3>
-        <p>Общайтесь с другими студентами и преподавателями</p>
-    </div>
-</section>
+</body>
 {% endblock %}

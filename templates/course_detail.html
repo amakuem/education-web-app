@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.title }} - Stepik{% endblock %}
+
+{% block content %}
+<div class="course-page-wrapper">
+    <aside class="sidebar-course">
+        <h3>Программа</h3>
+        {% for module in modules %}
+            <div class="module-title">Модуль {{ module.order_in_course }}: {{ module.title }}</div>
+            {% for lesson in module.lessons %}
+                <a href="{{ url_for('lesson_step', course_id=course.id, lesson_id=lesson.id, step_index=0) }}" class="lesson-link">
+                    ● {{ lesson.title }} 
+                    <small style="color: #999;">({{ lesson.duration }} мин)</small>
+                </a>
+            {% endfor %}
+        {% endfor %}
+    </aside>
+
+    <section class="main-content">
+        <div class="course-header">
+            <h1>{{ course.title }}</h1>
+            <p>Уровень: {{ course.level }} | Категория ID: {{ course.category_id }}</p>
+        </div>
+
+        <div class="content-body">
+            <h3>О курсе</h3>
+            <p>{{ course.description }}</p>
+            
+            <h4 style="color: #2c3e50;">Цена: {{ course.price }} ₽</h4>
+            <br>
+            <div class="enrollment-area">
+                {% if session.get('user_id') %}
+                    {% if is_enrolled %}
+                        <form action="{{ url_for('unenroll', course_id=course.id) }}" method="POST">
+                            <button type="submit" class="btn-unenroll">Отписаться от курса</button>
+                        </form>
+                    {% else %}
+                        <form action="{{ url_for('enroll', course_id=course.id) }}" method="POST">
+                            <button type="submit" class="stepik-btn">Записаться на курс</button>
+                        </form>
+                    {% endif %}
+                {% else %}
+                    <a href="/login" class="stepik-btn">Войдите, чтобы записаться</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}

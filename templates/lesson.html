@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}{{ lesson.title }}{% endblock %}
+
+{% block content %}
+<div class="course-page-wrapper">
+    <aside class="sidebar-course">
+        
+        <h3>{{ lesson.title }}</h3>
+        {% for m in modules %}
+            <div class="module-title">{{ m.title }}</div>
+            {% for l in m.lessons %}
+                <a href="{{ url_for('lesson_step', course_id=course_id, lesson_id=l.id, step_index=0) }}" 
+                    class="lesson-link {% if l.id == lesson.id %}active-lesson{% endif %}">
+                    {{ l.order_in_module }}. {{ l.title }}
+                </a>
+            {% endfor %}
+        {% endfor %}
+    </aside>
+
+    <div class="main-content">
+        <div class="step-navigation">
+            {% for step in steps %}
+                <a href="{{ url_for('lesson_step', course_id=course_id, lesson_id=lesson.id, step_index=loop.index0) }}" 
+                   class="step-icon {% if loop.index0 == step_index %}active{% endif %} {% if step.type == 'quiz' %}quiz-type{% endif %}"
+                   title="{{ step.title }}">
+                   {% if step.type == 'quiz' %}?{% else %}{{ loop.index }}{% endif %}
+                </a>
+            {% endfor %}
+        </div>
+
+        <div class="step-content">
+            <h2>{{ current_step.title }}</h2>
+            <hr>
+            
+            {% if current_step.type == 'page' %}
+                {% for section in content %}
+                    {% if section.section_type == 'text' %}
+                        <div class="section-text">{{ section.content }}</div>
+                    {% elif section.section_type == 'code' %}
+                        <div class="section-code"><code>{{ section.content }}</code></div>
+                    {% endif %}
+                    
+                    {% if section.video_url %}
+                        <div class="video-container">
+                            <iframe width="100%" height="400" src="{{ section.video_url }}" frameborder="0" allowfullscreen></iframe>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <div class="quiz-area">
+                    {% for q in content %}
+                        <div class="question-block">
+                            <p><strong>{{ loop.index }}. {{ q.text }}</strong></p>
+                            {% for option in q.answers.options %}
+                                <label class="option">
+                                    <input type="radio" name="q{{q.id}}" value="{{ option }}"> 
+                                    {{ option }}
+                                </label>
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                    <button class="btn-submit">Отправить ответ</button>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="nav-buttons">
+            {% if step_index > 0 %}
+                <a href="{{ url_for('lesson_step', course_id=course_id, lesson_id=lesson.id, step_index=step_index-1) }}" class="btn btn-secondary">Назад</a>
+            {% else %}
+                <div></div> 
+            {% endif %}
+            
+            {% if step_index < (steps|length - 1) %}
+                <a href="{{ url_for('lesson_step', course_id=course_id, lesson_id=lesson.id, step_index=step_index+1) }}" class="btn btn-primary">Вперед</a>
+            {% else %}
+                <span class="finish-msg">Урок завершен! 🎉</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
