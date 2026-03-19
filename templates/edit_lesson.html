@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="edit-container">
+    <a href="{{ url_for('edit_course', course_id=lesson.course_id) }}" class="btn btn-secondary">&larr; Назад к структуре курса</a>
+    
+    <hr>
+    <h1>Редактор урока: {{ lesson.title }}</h1>
+
+    <section class="mb-5">
+        <h3>Содержимое страницы</h3>
+        {% for page in pages %}
+            {% set sections = db.execute_query("SELECT * FROM PageSections WHERE page_id=%s ORDER BY section_order", (page.id,), fetch=True) %}
+            {% for section in sections %}
+            <div class="section-card shadow-sm p-3 mb-3 border rounded bg-white">
+                <form action="{{ url_for('edit_section', section_id=section.section_id) }}" method="POST">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="badge bg-info text-dark">{{ section.section_type | upper }}</span>
+                        <a href="{{ url_for('delete_section', section_id=section.section_id) }}" class="text-danger small" onclick="return confirm('Удалить этот блок?')">Удалить</a>
+                    </div>
+                    <textarea name="content" class="form-control mb-2" rows="4">{{ section.content }}</textarea>
+                    <button type="submit" class="btn btn-sm btn-primary">Сохранить изменения блока</button>
+                </form>
+            </div>
+            {% endfor %}
+        {% endfor %}
+
+        <div class="card p-3 bg-light border-dashed">
+            <h5>+ Добавить новый блок</h5>
+            <form action="{{ url_for('add_page_section', lesson_id=lesson.id) }}" method="POST">
+                <select name="type" class="form-select mb-2">
+                    <option value="text">Текст</option>
+                    <option value="code">Код</option>
+                </select>
+                <textarea name="content" class="form-control mb-2" placeholder="Напишите что-нибудь..."></textarea>
+                <button type="submit" class="btn btn-success">Добавить блок</button>
+            </form>
+        </div>
+    </section>
+
+    <section>
+        <h3>Тесты в уроке</h3>
+        {% for quiz in quizzes %}
+        <div class="card p-3 mb-3 border-warning">
+            <div class="d-flex justify-content-between align-items-center">
+                <strong>{{ quiz.title }}</strong>
+                <a href="{{ url_for('edit_quiz', quiz_id=quiz.id) }}" class="btn btn-warning btn-sm">Редактировать вопросы (JSON)</a>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not quizzes %}
+        <form action="{{ url_for('add_quiz', lesson_id=lesson.id) }}" method="POST" class="mt-3">
+            <input type="text" name="title" placeholder="Название теста" class="form-control mb-2" required>
+            <button type="submit" class="btn btn-outline-primary">Создать тест для этого урока</button>
+        </form>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

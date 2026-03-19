@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="edit-container">
+    <a href="javascript:history.back()" class="btn btn-secondary">&larr; Назад к уроку</a>
+    <h1>Тест: {{ quiz.title }}</h1>
+
+    <div class="course-info-card">
+        <h3>Добавить вопрос</h3>
+        <form method="POST">
+            <label>Текст вопроса:</label>
+            <input type="text" name="question_text" class="form-control" required>
+            
+            <label>Варианты ответов:</label>
+            <div id="options-container">
+                <div class="input-group mb-2">
+                    <div class="input-group-text">
+                        <input type="radio" name="correct_option" value="0" checked>
+                    </div>
+                    <input type="text" name="options[]" class="form-control" placeholder="Вариант 1" required>
+                </div>
+                <div class="input-group mb-2">
+                    <div class="input-group-text">
+                        <input type="radio" name="correct_option" value="1">
+                    </div>
+                    <input type="text" name="options[]" class="form-control" placeholder="Вариант 2" required>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-success mt-2">Сохранить вопрос</button>
+            <button type="button" onclick="addOption()" class="btn btn-sm btn-outline-secondary mb-3">+ Добавить вариант</button>
+        </form>
+    </div>
+    
+    <h3 class="mt-4">Существующие вопросы</h3>
+    {% for q in questions %}
+    <div class="module-item shadow-sm p-3 mb-3 bg-white rounded border">
+        <div class="d-flex justify-content-between">
+            <strong>{{ q.text }}</strong>
+            <a href="{{ url_for('delete_question', question_id=q.id) }}" class="text-danger" onclick="return confirm('Удалить?')">Удалить</a>
+        </div>
+        
+        <ul class="mt-2">
+            {# Теперь перебираем список из ключа 'options' #}
+            {% for option in q.answers.options %}
+                <li class="{{ 'text-success fw-bold' if option == q.answers.correct else 'text-dark' }}">
+                    {{ option }} 
+                    {% if option == q.answers.correct %} <small>(Правильный)</small> {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endfor %}
+    
+</div>
+<script>
+function addOption() {
+    const container = document.getElementById('options-container');
+    const count = container.getElementsByClassName('input-group').length;
+    const newDiv = document.createElement('div');
+    newDiv.className = 'input-group mb-2';
+    newDiv.innerHTML = `
+        <div class="input-group-text">
+            <input type="radio" name="correct_option" value="${count}">
+        </div>
+        <input type="text" name="options[]" class="form-control" placeholder="Вариант ${count + 1}" required>
+    `;
+    container.appendChild(newDiv);
+}
+</script>
+{% endblock %}

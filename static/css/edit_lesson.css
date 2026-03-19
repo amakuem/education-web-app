@@ -1,0 +1,3 @@
+.section-card { background: #fff; border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 8px; position: relative; }
+.section-type-badge { position: absolute; top: 10px; right: 10px; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; background: #eee; }
+.code-editor { font-family: monospace; background: #272822; color: #f8f8f2; }

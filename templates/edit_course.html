@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/edit_course.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="edit-container">
+    <div class="course-info-card">
+        <h2>Настройки курса</h2>
+        <form method="POST">
+            <label>Название курса:</label>
+            <input type="text" name="title" value="{{ course.title }}" class="form-control">
+            
+            <label>Описание:</label>
+            <textarea name="description" class="form-control" rows="4">{{ course.description }}</textarea>
+            
+            <label>Цена (₽):</label>
+            <input type="number" name="price" value="{{ course.price }}" class="form-control">
+            
+            <button type="submit" class="btn btn-primary">Обновить данные</button>
+        </form>
+    </div>
+
+    <h3>Содержание курса</h3>
+    
+    {% for module in modules %}
+    <div class="module-item">
+        <div class="module-header">
+            <span class="module-title">📦 Модуль: {{ module.title }}</span>
+            <a href="{{ url_for('delete_module', module_id=module.id) }}" class="btn btn-outline-danger" onclick="return confirm('Удалить модуль со всеми уроками?')">Удалить</a>
+        </div>
+        
+        <div class="lessons-list">
+            {% for lesson in module.lessons %}
+            <div class="lesson-item">
+                <span>📄 {{ lesson.title }}</span>
+                <a href="{{ url_for('edit_lesson', lesson_id=lesson.id) }}" class="btn btn-edit">Редактировать контент</a>
+            </div>
+            {% endfor %}
+        </div>
+
+        <form action="{{ url_for('add_lesson', module_id=module.id) }}" method="POST" style="display: flex; gap: 10px;">
+            <input type="text" name="title" placeholder="Название нового урока" class="form-control" style="margin-bottom: 0;" required>
+            <button type="submit" class="btn btn-success" style="white-space: nowrap;">+ Урок</button>
+        </form>
+    </div>
+    {% endfor %}
+
+    <div class="add-module-section">
+        <h4>Добавить новый раздел</h4>
+        <form action="{{ url_for('add_module', course_id=course.id) }}" method="POST" style="max-width: 400px; margin: 0 auto;">
+            <input type="text" name="title" placeholder="Например: Основы синтаксиса" class="form-control" required>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Создать модуль</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

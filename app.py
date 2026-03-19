@@ -4,18 +4,36 @@ import jwt
 import datetime
 import redis
 from functools import wraps
+import json
+from flask_session import Session
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_for_stopik'
 db = DBManager()
 
+session_redis = redis.Redis(host='localhost', port=6379, db=0)
 
 r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+# Настройка Flask-Session
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_REDIS'] = session_redis  # Используем твой существующий объект r
+Session(app)
+
+
+
 
 app.config['JWT_SECRET'] = 'your_jwt_secret_key' 
 
 @app.route('/')
 def index():
+    cache_key = "catalog:published_courses"
+    cached_courses = get_cache(cache_key)
+    
+    if cached_courses:
+        return render_template('index.html', courses=cached_courses)
     
     query = """
         SELECT c.id, c.title, c.price, cat.name as category_name 
@@ -24,6 +42,10 @@ def index():
         WHERE c.is_published = TRUE
     """
     courses = db.execute_query(query, fetch=True)
+    
+    # Кэшируем на 10 минут (600 секунд)
+    set_cache(cache_key, courses, ttl=600)
+    
     return render_template('index.html', courses=courses)
 
 
@@ -127,23 +149,34 @@ def logout():
 @app.route('/dashboard')
 @token_required
 def dashboard(current_user_id):
-    # Исправленный запрос с JOIN, чтобы найти роль пользователя
-    user_query = """
-        SELECT r.role_name 
-        FROM Roles r
-        JOIN User_Roles ur ON r.id = ur.role_id
-        WHERE ur.user_id = %s
-    """
-    user_data = db.execute_query(user_query, (current_user_id,), fetch=True)
+    # 1. Кэширование роли пользователя (Списки ролей)
+    role_cache_key = get_cache_key("user:role", current_user_id)
+    role = get_cache(role_cache_key)
     
-    if not user_data:
-        return redirect(url_for('logout'))
-        
-    role = user_data[0]['role_name']
-    
-    # Сохраняем роль в сессию на случай, если другие роуты её используют
+    if not role:
+        user_query = """
+            SELECT r.role_name 
+            FROM Roles r
+            JOIN User_Roles ur ON r.id = ur.role_id
+            WHERE ur.user_id = %s
+        """
+        user_data = db.execute_query(user_query, (current_user_id,), fetch=True)
+        if not user_data:
+            return redirect(url_for('logout'))
+        role = user_data[0]['role_name']
+        set_cache(role_cache_key, role, ttl=3600) # Кэш роли на 1 час
+
     session['role'] = role
 
+    # 2. Кэширование содержимого дашборда (Аналитические запросы)
+    dash_cache_key = get_cache_key("user:dash_content", current_user_id)
+    cached_dash = get_cache(dash_cache_key)
+    
+    if cached_dash:
+        # Распаковываем закэшированные данные в шаблон
+        return render_template(f'{role}_dashboard.html', **cached_dash)
+
+    dash_data = {}
     if role == 'student':
         my_courses_query = """
             SELECT c.* FROM Courses c
@@ -156,35 +189,82 @@ def dashboard(current_user_id):
                 SELECT course_id FROM Enrollments WHERE user_id = %s
             )
         """
-        my_courses = db.execute_query(my_courses_query, (current_user_id,), fetch=True)
-        available_courses = db.execute_query(available_query, (current_user_id,), fetch=True)
-        
-        return render_template('student_dashboard.html', my_courses=my_courses, available=available_courses)
+        dash_data['my_courses'] = db.execute_query(my_courses_query, (current_user_id,), fetch=True)
+        dash_data['available'] = db.execute_query(available_query, (current_user_id,), fetch=True)
 
     elif role == 'instructor':
-        created_courses = db.execute_query("SELECT * FROM Courses WHERE instructor_id = %s", (current_user_id,), fetch=True)
-        return render_template('instructor_dashboard.html', courses=created_courses)
+        dash_data['courses'] = db.execute_query("SELECT * FROM Courses WHERE instructor_id = %s", (current_user_id,), fetch=True)
     
-    return "Роль не распознана", 403
+    # Кэшируем данные дашборда на 5 минут
+    set_cache(dash_cache_key, dash_data, ttl=300)
+    return render_template(f'{role}_dashboard.html', **dash_data)
+
+@app.route('/lesson/<int:lesson_id>/add_page_section', methods=['POST'])
+@token_required
+def add_page_section(current_user_id, lesson_id):
+    content = request.form.get('content')
+    section_type = request.form.get('type', 'text') # text или code
+    
+    # 1. Находим или создаем страницу для этого урока (упростим: 1 урок = 1 страница)
+    page = db.execute_query("SELECT id FROM LessonPages WHERE lesson_id=%s", (lesson_id,), fetch=True)
+    if not page:
+        db.execute_query("INSERT INTO LessonPages (lesson_id, title, order_in_lesson) VALUES (%s, 'Контент', 1)", (lesson_id,))
+        page = db.execute_query("SELECT id FROM LessonPages WHERE lesson_id=%s", (lesson_id,), fetch=True)
+    
+    page_id = page[0]['id']
+    
+    # 2. Добавляем секцию
+    last_order = db.execute_query("SELECT MAX(section_order) as m FROM PageSections WHERE page_id=%s", (page_id,), fetch=True)[0]['m'] or 0
+    db.execute_query("""
+        INSERT INTO PageSections (page_id, content, section_type, section_order) 
+        VALUES (%s, %s, %s, %s)
+    """, (page_id, content, section_type, last_order + 1))
+    
+    flash("Блок контента добавлен")
+    return redirect(url_for('edit_lesson', lesson_id=lesson_id))
+
+# Роут для удаления секции
+@app.route('/delete_section/<int:section_id>')
+@token_required
+def delete_section(current_user_id, section_id):
+    db.execute_query("DELETE FROM PageSections WHERE id=%s", (section_id,))
+    return redirect(request.referrer)
 
 @app.route('/edit_course/<int:course_id>', methods=['GET', 'POST'])
-def edit_course(course_id):
+@token_required
+def edit_course(current_user_id, course_id):
     if session.get('role') != 'instructor':
-        return "Доступ запрещен", 403
+        flash("У вас нет прав для редактирования курсов.")
+        return redirect(url_for('dashboard'))
         
     if request.method == 'POST':
         title = request.form.get('title')
-        desc = request.form.get('description')
+        description = request.form.get('description')
         price = request.form.get('price')
         
-        db.execute_query("""
-            UPDATE Courses SET title=%s, description=%s, price=%s 
+        update_query = """
+            UPDATE Courses 
+            SET title=%s, description=%s, price=%s 
             WHERE id=%s AND instructor_id=%s
-        """, (title, desc, price, course_id, session['user_id']))
+        """
+        db.execute_query(update_query, (title, description, price, course_id, current_user_id))
+        
+        # --- ИНВАЛИДАЦИЯ КЭША ---
+        r.delete("catalog:published_courses") # Сброс общего каталога
+        r.delete(get_cache_key("user:dash_content", current_user_id)) # Сброс дашборда автора
+        # ------------------------
+        
+        flash("Курс успешно обновлен! Кэш очищен.")
         return redirect(url_for('dashboard'))
         
-    course = db.execute_query("SELECT * FROM Courses WHERE id=%s", (course_id,), fetch=True)
-    return render_template('edit_course.html', course=course[0])
+    course = db.execute_query("SELECT * FROM Courses WHERE id=%s AND instructor_id=%s", (course_id, current_user_id), fetch=True)
+    if not course: return "404", 404
+
+    modules = db.execute_query("SELECT * FROM Modules WHERE course_id=%s ORDER BY order_in_course", (course_id,), fetch=True)
+    for m in modules:
+        m['lessons'] = db.execute_query("SELECT * FROM Lessons WHERE module_id=%s ORDER BY order_in_module", (m['id'],), fetch=True)
+
+    return render_template('edit_course.html', course=course[0], modules=modules)
 
 @app.route('/course/<int:course_id>')
 def course_detail(course_id):
@@ -227,8 +307,12 @@ def enroll(course_id):
         return redirect(url_for('login'))
     
     user_id = session['user_id']
-    # SQL для записи на курс
     db.execute_query("INSERT INTO Enrollments (user_id, course_id) VALUES (%s, %s)", (user_id, course_id))
+    
+    # --- ИНВАЛИДАЦИЯ КЭША ---
+    r.delete(get_cache_key("user:dash_content", user_id)) # Обновляем дашборд студента
+    # ------------------------
+    
     flash("Вы успешно записались на курс!")
     return redirect(url_for('course_detail', course_id=course_id))
 
@@ -238,8 +322,12 @@ def unenroll(course_id):
         return redirect(url_for('login'))
     
     user_id = session['user_id']
-    # SQL для удаления записи
     db.execute_query("DELETE FROM Enrollments WHERE user_id = %s AND course_id = %s", (user_id, course_id))
+    
+    # --- ИНВАЛИДАЦИЯ КЭША ---
+    r.delete(get_cache_key("user:dash_content", user_id))
+    # ------------------------
+    
     flash("Вы отписались от курса.")
     return redirect(url_for('course_detail', course_id=course_id))
 
@@ -288,6 +376,156 @@ def lesson_step(course_id, lesson_id, step_index):
                            current_step=current_step,
                            step_index=step_index,
                            content=step_content)
+
+# --- УПРАВЛЕНИЕ МОДУЛЯМИ ---
+
+@app.route('/course/<int:course_id>/add_module', methods=['POST'])
+@token_required
+def add_module(current_user_id, course_id):
+    title = request.form.get('title')
+    # Узнаем последний порядок, чтобы поставить в конец
+    last_order = db.execute_query("SELECT MAX(order_in_course) as m FROM Modules WHERE course_id=%s", (course_id,), fetch=True)[0]['m'] or 0
+    
+    db.execute_query("""
+        INSERT INTO Modules (course_id, title, order_in_course) 
+        VALUES (%s, %s, %s)
+    """, (course_id, title, last_order + 1))
+    flash("Модуль добавлен")
+    return redirect(url_for('edit_course', course_id=course_id))
+
+@app.route('/delete_module/<int:module_id>')
+@token_required
+def delete_module(current_user_id, module_id):
+    # Важно: сначала проверяем, что этот модуль принадлежит курсу этого учителя
+    check = db.execute_query("""
+        SELECT m.id FROM Modules m 
+        JOIN Courses c ON m.course_id = c.id 
+        WHERE m.id=%s AND c.instructor_id=%s
+    """, (module_id, current_user_id), fetch=True)
+    
+    if check:
+        db.execute_query("DELETE FROM Modules WHERE id=%s", (module_id,))
+        flash("Модуль удален")
+    return redirect(request.referrer)
+
+# --- УПРАВЛЕНИЕ УРОКАМИ ---
+
+@app.route('/module/<int:module_id>/add_lesson', methods=['POST'])
+@token_required
+def add_lesson(current_user_id, module_id):
+    title = request.form.get('title')
+    last_order = db.execute_query("SELECT MAX(order_in_module) as m FROM Lessons WHERE module_id=%s", (module_id,), fetch=True)[0]['m'] or 0
+    
+    db.execute_query("""
+        INSERT INTO Lessons (module_id, title, order_in_module) 
+        VALUES (%s, %s, %s)
+    """, (module_id, title, last_order + 1))
+    flash("Урок добавлен")
+    return redirect(request.referrer)
+
+# --- РЕДАКТИРОВАНИЕ КОНТЕНТА УРОКА ---
+
+@app.route('/edit_lesson/<int:lesson_id>', methods=['GET', 'POST'])
+@token_required
+def edit_lesson(current_user_id, lesson_id):
+    # Получаем урок и ID курса для кнопки "Назад"
+    query = """
+        SELECT l.*, m.course_id 
+        FROM Lessons l
+        JOIN Modules m ON l.module_id = m.id
+        WHERE l.id = %s
+    """
+    lesson_data = db.execute_query(query, (lesson_id,), fetch=True)
+    if not lesson_data: return "Урок не найден", 404
+    lesson = lesson_data[0]
+
+    if request.method == 'POST':
+        # Обновление названия урока
+        new_title = request.form.get('title')
+        db.execute_query("UPDATE Lessons SET title=%s WHERE id=%s", (new_title, lesson_id))
+        flash("Название урока обновлено")
+        return redirect(url_for('edit_lesson', lesson_id=lesson_id))
+
+    pages = db.execute_query("SELECT * FROM LessonPages WHERE lesson_id=%s", (lesson_id,), fetch=True)
+    quizzes = db.execute_query("SELECT * FROM Quizzes WHERE lesson_id=%s", (lesson_id,), fetch=True)
+    
+    return render_template('edit_lesson.html', lesson=lesson, pages=pages, quizzes=quizzes, db=db)
+
+@app.route('/edit_section/<int:section_id>', methods=['POST'])
+@token_required
+def edit_section(current_user_id, section_id):
+    new_content = request.form.get('content')
+    db.execute_query("UPDATE PageSections SET content=%s WHERE section_id=%s", (new_content, section_id))
+    flash("Блок обновлен")
+    return redirect(request.referrer)
+
+# НОВЫЙ РОУТ: Создание теста для урока
+@app.route('/lesson/<int:lesson_id>/add_quiz', methods=['POST'])
+@token_required
+def add_quiz(current_user_id, lesson_id):
+    title = request.form.get('title', 'Новый тест')
+    db.execute_query("INSERT INTO Quizzes (title, lesson_id) VALUES (%s, %s)", (title, lesson_id))
+    flash("Тест создан")
+    return redirect(request.referrer)
+
+@app.route('/edit_quiz/<int:quiz_id>', methods=['GET', 'POST'])
+@token_required
+def edit_quiz(current_user_id, quiz_id):
+    if request.method == 'POST':
+        question_text = request.form.get('question_text')
+        options = request.form.getlist('options[]')
+        # Получаем индекс выбранного радио-баттона
+        correct_idx = int(request.form.get('correct_option', 0))
+        
+        # Формируем структуру: {"correct": "значение", "options": ["сп", "ис", "ок"]}
+        answers_dict = {
+            "correct": options[correct_idx],
+            "options": options
+        }
+        
+        db.execute_query("""
+            INSERT INTO Questions (text, answers, quiz_id) 
+            VALUES (%s, %s, %s)
+        """, (question_text, json.dumps(answers_dict, ensure_ascii=False), quiz_id))
+        
+        flash("Вопрос добавлен в формате БД")
+        return redirect(url_for('edit_quiz', quiz_id=quiz_id))
+
+    quiz = db.execute_query("SELECT * FROM Quizzes WHERE id=%s", (quiz_id,), fetch=True)
+    questions = db.execute_query("SELECT * FROM Questions WHERE quiz_id=%s", (quiz_id,), fetch=True)
+    
+    # Парсим JSON для отображения
+    for q in questions:
+        if isinstance(q['answers'], str):
+            q['answers'] = json.loads(q['answers'])
+            
+    return render_template('edit_quiz.html', quiz=quiz[0], questions=questions)
+
+# До кучи добавим удаление вопроса
+@app.route('/delete_question/<int:question_id>')
+@token_required
+def delete_question(current_user_id, question_id):
+    db.execute_query("DELETE FROM Questions WHERE id=%s", (question_id,))
+    return redirect(request.referrer)
+
+# Вспомогательная функция для генерации ключей кэша
+def get_cache_key(prefix, *args):
+    return f"{prefix}:" + ":".join(map(str, args))
+
+# Сохранение в кэш с TTL
+def set_cache(key, data, ttl=300):
+    r.setex(key, ttl, json.dumps(data, default=str)) # default=str для обработки дат
+
+# Получение из кэша
+def get_cache(key):
+    data = r.get(key)
+    return json.loads(data) if data else None
+
+# Удаление (инвалидация) по паттерну
+def invalidate_cache(pattern):
+    keys = r.keys(f"{pattern}*")
+    if keys:
+        r.delete(*keys)
 
 if __name__ == '__main__':
     app.run(debug=True)
