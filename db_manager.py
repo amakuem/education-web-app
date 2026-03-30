@@ -12,10 +12,12 @@ class DBManager:
 
     def execute_query(self, query, params=None, fetch=False):
         connection = None
+        from app import save_log # Импорт внутри, чтобы избежать циклической зависимости
+        save_log("DB_QUERY", "EXECUTE", details=query[:100]) # логируем первые 100 символов запроса
         try:
             connection = mysql.connector.connect(**self.config)
             cursor = connection.cursor(dictionary=True) # Получаем данные как словари
-            cursor.execute(query, params or ())
+            cursor.execute(query, params or ()) 
             
             if fetch:
                 result = cursor.fetchall()

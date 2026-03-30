@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Stepik-like Site{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/course_detail.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/lesson.css') }}">
@@ -11,6 +12,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/edit_course.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/edit_lesson.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/edit_quiz.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_dashboard.css') }}">
 </head>
 <body>
     <nav class="navbar">
@@ -43,5 +45,6 @@
     <footer class="footer">
         <p>&copy; 2024 Stepik-like Website. All rights reserved.</p>
     </footer>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

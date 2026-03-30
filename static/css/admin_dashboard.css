@@ -1,0 +1,24 @@
+.table thead th {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+}
+.badge {
+    font-weight: 500;
+    padding: 0.5em 0.8em;
+}
+.card {
+    border-radius: 12px;
+}
+.table-hover tbody tr:hover {
+    background-color: rgba(0,0,0,0.02);
+}
+.bar-hover:hover {
+        background-color: #0056b3 !important;
+        cursor: pointer;
+        filter: brightness(1.1);
+    }
+    .transition-all {
+        transition: all 0.3s ease;
+    }

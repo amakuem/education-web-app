@@ -6,6 +6,11 @@ import redis
 from functools import wraps
 import json
 from flask_session import Session
+from pymongo import MongoClient
+from datetime import datetime, timedelta
+import csv
+import io
+from flask import Response
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_for_stopik'
@@ -15,14 +20,29 @@ session_redis = redis.Redis(host='localhost', port=6379, db=0)
 
 r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
-# Настройка Flask-Session
+mongo_client = MongoClient('mongodb://localhost:27017/')
+log_db = mongo_client['stopik_logs']
+logs_collection = log_db['system_logs']
+logs_collection.create_index("expire_at", expireAfterSeconds=0)
+
+
 app.config['SESSION_TYPE'] = 'redis'
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_REDIS'] = session_redis  # Используем твой существующий объект r
 Session(app)
 
-
+def save_log(event_type, action, user_id=None, details=None):
+    """Универсальная функция для записи лога"""
+    log_entry = {
+        "timestamp": datetime.utcnow(),
+        "event_type": event_type, 
+        "action": action,
+        "user_id": user_id,
+        "details": details,
+        "expire_at": datetime.utcnow() + timedelta(days=30) 
+    }
+    logs_collection.insert_one(log_entry)
 
 
 app.config['JWT_SECRET'] = 'your_jwt_secret_key' 
@@ -65,6 +85,9 @@ def register_failed_attempt(email):
         
         r.setex(f"blacklist:{email}", 600, "blocked")
         r.delete(f"attempts:{email}") 
+
+        save_log("SECURITY", "ACCOUNT_BLOCKED", details=f"Email: {email} blocked after 3 failed attempts")
+
         return True, 0 
     
     return False, 3 - attempts 
@@ -99,12 +122,14 @@ def login():
             token = jwt.encode({
                 'user_id': user_data['id'],
                 'role': user_data['role_name'],
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.utcnow() + timedelta(hours=24)
             }, app.config['JWT_SECRET'], algorithm='HS256')
 
             session['user_id'] = user_data['id']
             session['first_name'] = user_data['first_name']
             session['role'] = user_data['role_name']
+
+            save_log("USER_ACTION", "LOGIN_SUCCESS", user_id=user_data['id'])
 
             resp = redirect(url_for('dashboard'))
             resp.set_cookie('access_token', token, httponly=True)
@@ -113,7 +138,7 @@ def login():
         else:
             
             is_now_blocked, attempts_left = register_failed_attempt(email)
-            
+            save_log("USER_ACTION", "LOGIN_FAILED", details=f"Email: {email}")
             if is_now_blocked:
                 flash("Слишком много неудачных попыток. Вы заблокированы на 10 минут.")
             else:
@@ -141,6 +166,9 @@ def token_required(f):
 
 @app.route('/logout')
 def logout():
+    user_id = session.get('user_id')
+    if user_id:
+        save_log("USER_ACTION", "LOGOUT", user_id=user_id)
     session.clear()
     resp = redirect(url_for('login'))
     resp.set_cookie('access_token', '', expires=0) # Удаляем токен
@@ -149,7 +177,7 @@ def logout():
 @app.route('/dashboard')
 @token_required
 def dashboard(current_user_id):
-    # 1. Кэширование роли пользователя (Списки ролей)
+    
     role_cache_key = get_cache_key("user:role", current_user_id)
     role = get_cache(role_cache_key)
     
@@ -168,6 +196,44 @@ def dashboard(current_user_id):
 
     session['role'] = role
 
+    if role == 'admin':
+        
+        user_id_filter = request.args.get('user_id', type=int)
+        event_type = request.args.get('event_type')
+        days_ago = request.args.get('days', default=7, type=int)
+        
+        filter_query = {}
+        
+
+        time_limit = datetime.utcnow() - timedelta(days=days_ago)
+        filter_query["timestamp"] = {"$gte": time_limit}
+        
+
+        if user_id_filter:
+            filter_query["user_id"] = user_id_filter
+            
+
+        if event_type and event_type != 'ALL':
+            filter_query["event_type"] = event_type
+
+
+        logs = list(logs_collection.find(filter_query).sort("timestamp", -1).limit(100))
+        
+        for log in logs:
+            log['_id'] = str(log['_id'])
+            
+        reports = get_analytics_reports() 
+        
+            
+        return render_template('admin_dashboard.html', 
+                               logs=logs, 
+                               reports=reports,  # ПЕРЕДАЕМ СЮДА
+                               current_filters={
+                                   'user_id': user_id_filter,
+                                   'event_type': event_type,
+                                   'days': days_ago
+                               })
+
     # 2. Кэширование содержимого дашборда (Аналитические запросы)
     dash_cache_key = get_cache_key("user:dash_content", current_user_id)
     cached_dash = get_cache(dash_cache_key)
@@ -177,7 +243,22 @@ def dashboard(current_user_id):
         return render_template(f'{role}_dashboard.html', **cached_dash)
 
     dash_data = {}
-    if role == 'student':
+    if role == 'admin':
+        # Параметры фильтрации (берем из query string, если есть)
+        days_ago = request.args.get('days', default=1, type=int)
+        time_limit = datetime.utcnow() - timedelta(days=days_ago)
+        
+        # Запрос к MongoDB
+        logs = list(logs_collection.find(
+            {"timestamp": {"$gte": time_limit}}
+        ).sort("timestamp", -1).limit(50)) # Последние 50 штук
+        
+        dash_data['logs'] = logs
+        # Для админа также можем подгрузить курсы, как для студента
+        my_courses_query = "SELECT c.* FROM Courses c JOIN Enrollments e ON c.id = e.course_id WHERE e.user_id = %s"
+        dash_data['my_courses'] = db.execute_query(my_courses_query, (current_user_id,), fetch=True)
+
+    elif role == 'student':
         my_courses_query = """
             SELECT c.* FROM Courses c
             JOIN Enrollments e ON c.id = e.course_id
@@ -221,6 +302,7 @@ def add_page_section(current_user_id, lesson_id):
     """, (page_id, content, section_type, last_order + 1))
     
     flash("Блок контента добавлен")
+    save_log("USER_ACTION", "CREATE_SECTION", user_id=current_user_id, details=f"Lesson: {lesson_id}")
     return redirect(url_for('edit_lesson', lesson_id=lesson_id))
 
 # Роут для удаления секции
@@ -228,6 +310,7 @@ def add_page_section(current_user_id, lesson_id):
 @token_required
 def delete_section(current_user_id, section_id):
     db.execute_query("DELETE FROM PageSections WHERE id=%s", (section_id,))
+    save_log("USER_ACTION", "DELETE_SECTION", user_id=current_user_id, details=f"ID: {section_id}")
     return redirect(request.referrer)
 
 @app.route('/edit_course/<int:course_id>', methods=['GET', 'POST'])
@@ -248,6 +331,9 @@ def edit_course(current_user_id, course_id):
             WHERE id=%s AND instructor_id=%s
         """
         db.execute_query(update_query, (title, description, price, course_id, current_user_id))
+
+        save_log("USER_ACTION", "COURSE_UPDATE", user_id=current_user_id, 
+                 details=f"Course: {course_id}, New Price: {request.form.get('price')}")
         
         # --- ИНВАЛИДАЦИЯ КЭША ---
         r.delete("catalog:published_courses") # Сброс общего каталога
@@ -299,7 +385,11 @@ def course_detail(course_id):
 
     return render_template('course_detail.html', course=course[0], modules=modules,is_enrolled=is_enrolled)
 
-# Добавьте это в app.py
+
+# @app.errorhandler(Exception)
+# def handle_exception(e):
+#     save_log("ERROR", type(e).__name__, details=str(e), user_id=session.get('user_id'))
+#     return "Произошла внутренняя ошибка сервера", 500
 
 @app.route('/enroll/<int:course_id>', methods=['POST'])
 def enroll(course_id):
@@ -308,6 +398,7 @@ def enroll(course_id):
     
     user_id = session['user_id']
     db.execute_query("INSERT INTO Enrollments (user_id, course_id) VALUES (%s, %s)", (user_id, course_id))
+    save_log("USER_ACTION", "COURSE_ENROLL", user_id=user_id, details=f"Course ID: {course_id}")
     
     # --- ИНВАЛИДАЦИЯ КЭША ---
     r.delete(get_cache_key("user:dash_content", user_id)) # Обновляем дашборд студента
@@ -323,6 +414,8 @@ def unenroll(course_id):
     
     user_id = session['user_id']
     db.execute_query("DELETE FROM Enrollments WHERE user_id = %s AND course_id = %s", (user_id, course_id))
+
+    save_log("USER_ACTION", "COURSE_UNENROLL", user_id=user_id, details=f"Course ID: {course_id}")
     
     # --- ИНВАЛИДАЦИЯ КЭША ---
     r.delete(get_cache_key("user:dash_content", user_id))
@@ -391,6 +484,7 @@ def add_module(current_user_id, course_id):
         VALUES (%s, %s, %s)
     """, (course_id, title, last_order + 1))
     flash("Модуль добавлен")
+    save_log("USER_ACTION", "CREATE_MODULE", user_id=current_user_id, details=f"Course: {course_id}, Title: {title}")
     return redirect(url_for('edit_course', course_id=course_id))
 
 @app.route('/delete_module/<int:module_id>')
@@ -405,6 +499,7 @@ def delete_module(current_user_id, module_id):
     
     if check:
         db.execute_query("DELETE FROM Modules WHERE id=%s", (module_id,))
+        save_log("USER_ACTION", "MODULE_DELETE", user_id=current_user_id, details=f"Module ID: {module_id}")
         flash("Модуль удален")
     return redirect(request.referrer)
 
@@ -421,6 +516,7 @@ def add_lesson(current_user_id, module_id):
         VALUES (%s, %s, %s)
     """, (module_id, title, last_order + 1))
     flash("Урок добавлен")
+    save_log("USER_ACTION", "CREATE_LESSON", user_id=current_user_id, details=f"Module ID: {module_id}")
     return redirect(request.referrer)
 
 # --- РЕДАКТИРОВАНИЕ КОНТЕНТА УРОКА ---
@@ -457,6 +553,7 @@ def edit_section(current_user_id, section_id):
     new_content = request.form.get('content')
     db.execute_query("UPDATE PageSections SET content=%s WHERE section_id=%s", (new_content, section_id))
     flash("Блок обновлен")
+    save_log("USER_ACTION", "UPDATE_SECTION", user_id=current_user_id, details=f"Section ID: {section_id}")
     return redirect(request.referrer)
 
 # НОВЫЙ РОУТ: Создание теста для урока
@@ -466,6 +563,8 @@ def add_quiz(current_user_id, lesson_id):
     title = request.form.get('title', 'Новый тест')
     db.execute_query("INSERT INTO Quizzes (title, lesson_id) VALUES (%s, %s)", (title, lesson_id))
     flash("Тест создан")
+    save_log("USER_ACTION", "CREATE_QUIZ", user_id=current_user_id, details=f"Lesson ID: {lesson_id}")
+    
     return redirect(request.referrer)
 
 @app.route('/edit_quiz/<int:quiz_id>', methods=['GET', 'POST'])
@@ -489,6 +588,7 @@ def edit_quiz(current_user_id, quiz_id):
         """, (question_text, json.dumps(answers_dict, ensure_ascii=False), quiz_id))
         
         flash("Вопрос добавлен в формате БД")
+        save_log("USER_ACTION", "CREATE_QUESTION", user_id=current_user_id, details=f"Quiz ID: {quiz_id}")
         return redirect(url_for('edit_quiz', quiz_id=quiz_id))
 
     quiz = db.execute_query("SELECT * FROM Quizzes WHERE id=%s", (quiz_id,), fetch=True)
@@ -506,6 +606,7 @@ def edit_quiz(current_user_id, quiz_id):
 @token_required
 def delete_question(current_user_id, question_id):
     db.execute_query("DELETE FROM Questions WHERE id=%s", (question_id,))
+    save_log("USER_ACTION", "DELETE_QUESTION", user_id=current_user_id, details=f"Question ID: {question_id}")  
     return redirect(request.referrer)
 
 # Вспомогательная функция для генерации ключей кэша
@@ -526,6 +627,214 @@ def invalidate_cache(pattern):
     keys = r.keys(f"{pattern}*")
     if keys:
         r.delete(*keys)
+
+def get_analytics_reports(days=7):
+    reports = {}
+    # Вычисляем дату начала периода
+    start_date = datetime.utcnow() - timedelta(days=days)
+    
+    # Общий фильтр по времени для всех запросов
+    time_filter = {"timestamp": {"$gte": start_date}}
+
+    # 1. ТОП студентов (теперь с фильтром по периоду)
+    reports['top_active_users'] = list(logs_collection.aggregate([
+        {
+            # Фильтруем по времени и исключаем системные логи (где user_id: 0 или None)
+            "$match": { 
+                **time_filter,
+                "user_id": { 
+                    "$exists": True, 
+                    "$ne": None, 
+                    "$gt": 0 
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": "$user_id", 
+                "total_actions": {"$sum": 1} # Считаем все логи этого юзера
+            }
+        },
+        {"$sort": {"total_actions": -1}},
+        {"$limit": 10}
+    ]))
+
+    # 2. Чистая CRUD Статистика (с фильтром по периоду)
+    crud_pipeline = [
+        {
+            "$match": {
+                "action": { 
+                    "$regex": "CREATE|ADD|ENROLL|UPDATE|EDIT|DELETE|REMOVE|UNENROLL", 
+                    "$options": "i"
+                },
+                **time_filter # Добавляем фильтр времени
+            }
+        },
+        {
+            "$project": {
+                "operation_type": {
+                    "$switch": {
+                        "branches": [
+                            {"case": {"$regexMatch": {"input": "$action", "regex": "CREATE|ADD|ENROLL"}}, "then": "CREATE"},
+                            {"case": {"$regexMatch": {"input": "$action", "regex": "UPDATE|EDIT"}}, "then": "UPDATE"},
+                            {"case": {"$regexMatch": {"input": "$action", "regex": "DELETE|REMOVE|UNENROLL"}}, "then": "DELETE"}
+                        ],
+                        "default": "OTHER"
+                    }
+                }
+            }
+        },
+        {"$group": {"_id": "$operation_type", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    reports['event_distribution'] = list(logs_collection.aggregate(crud_pipeline))
+
+    if days <= 1:
+        date_format = "%H:00"  # Можно использовать "%d.%m %H:00", если нужны и дата, и час
+    else:
+        date_format = "%Y-%m-%d"
+
+    # 3. Временные тренды (Активность по дням)
+    reports['time_series'] = list(logs_collection.aggregate([
+        { "$match": time_filter },
+        {
+            # Добавляем конвертацию, если вдруг timestamp в базе — строка
+            "$addFields": {
+                "ts_obj": { "$toDate": "$timestamp" }
+            }
+        },
+        {
+            "$group": {
+                # Используем нашу переменную date_format
+                "_id": { "$dateToString": { "format": date_format, "date": "$ts_obj" } },
+                "count": { "$sum": 1 }
+            }
+        },
+        # Сортировка важна, чтобы часы шли по порядку (00, 01, 02...)
+        {"$sort": {"_id": 1}}
+    ]))
+
+    # 4. Аномалии (за выбранный период)
+    reports['anomalies'] = list(logs_collection.aggregate([
+        {
+            "$match": {
+                **time_filter,
+                # Исключаем пустые, несуществующие или системные ID (0)
+                "user_id": { 
+                    "$exists": True, 
+                    "$ne": None, 
+                    "$gt": 0 
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": {
+                    "user_id": "$user_id",
+                    "hour": { "$dateToString": { "format": "%Y-%m-%d %H", "date": "$timestamp" } }
+                },
+                "actions": { "$sum": 1 }
+            }
+        },
+        {"$match": {"actions": {"$gt": 20}}},
+        {"$sort": {"actions": -1}}
+    ]))
+
+    return reports
+
+@app.route('/admin/analytics')
+@token_required
+def admin_analytics(current_user_id):
+    if session.get('role') != 'admin':
+        return redirect(url_for('dashboard'))
+    
+    # Получаем период из URL, по умолчанию 7 дней
+    days = request.args.get('analytics_days', default=7, type=int)
+    
+    reports = get_analytics_reports(days=days)
+    mock_filters = {
+        'days': 7,
+        'event_type': 'ALL',
+        'user_id': None
+    }
+    return render_template(
+        'admin_dashboard.html', # Твой правильный файл
+        reports=reports, 
+        current_days=days, 
+        current_filters=mock_filters,
+        now=datetime.utcnow(), 
+        timedelta=timedelta
+    )
+
+@app.route('/admin/export/<report_type>/<format>')
+@token_required
+def export_report(current_user_id, report_type, format):
+    if session.get('role') != 'admin':
+        return "Access denied", 403
+
+    # Берем количество дней из параметров запроса (как в основном роуте)
+    days = request.args.get('days', default=7, type=int)
+    reports = get_analytics_reports(days=days)
+    data = reports.get(report_type, [])
+
+    if not data:
+        return "No data to export", 404
+
+    # --- ЛОГИКА ДЛЯ JSON ---
+    if format == 'json':
+        return Response(
+            json.dumps(data, default=str, ensure_ascii=False, indent=4),
+            mimetype='application/json',
+            headers={'Content-Disposition': f'attachment;filename={report_type}_{days}d.json'}
+        )
+    
+    # --- ЛОГИКА ДЛЯ CSV ---
+    elif format == 'csv':
+        output = io.StringIO()
+        # Ставим lineterminator, чтобы в Excel не было пустых строк
+        writer = csv.writer(output, lineterminator='\n')
+        
+        # Подготовка заголовков и данных (особенно для аномалий)
+        if report_type == 'anomalies':
+            # Разворачиваем вложенный _id: {user_id, hour}
+            writer.writerow(['user_id', 'hour', 'actions_count'])
+            for row in data:
+                writer.writerow([row['_id']['user_id'], row['_id']['hour'], row['actions']])
+        
+        elif report_type == 'top_active_users':
+            writer.writerow(['user_id', 'total_actions'])
+            for row in data:
+                writer.writerow([row['_id'], row['total_actions']])
+        
+        else:
+            # Универсальный вариант для простых списков (time_series, event_distribution)
+            if data:
+                writer.writerow(data[0].keys())
+                for row in data:
+                    writer.writerow(row.values())
+        
+        return Response(
+            output.getvalue().encode('utf-8-sig'), # utf-8-sig для корректного открытия в Excel
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment;filename={report_type}_{days}d.csv'}
+        )
+
+    return "Unsupported format", 400
+
+# @app.route('/submit_quiz/<int:quiz_id>', methods=['POST'])
+# @token_required
+# def submit_quiz(current_user_id, quiz_id):
+#     # ... твой код проверки ответов и записи в Quiz_Attempts (MySQL) ...
+    
+#     # Если тест пройден успешно:
+#     if is_passed:
+#         # 1. Проверяем в MySQL, остались ли еще не пройденные тесты в этом уроке
+#         # (Если этот тест был последним или единственным)
+        
+#         # 2. Логируем завершение урока в MongoDB
+#         lesson_id = db.execute_query("SELECT lesson_id FROM Quizzes WHERE id=%s", (quiz_id,), fetch=True)[0]['lesson_id']
+        
+#         save_log("USER_PROGRESS", "LESSON_COMPLETED", user_id=current_user_id, details=f"Lesson ID: {lesson_id}")
 
 if __name__ == '__main__':
     app.run(debug=True)
