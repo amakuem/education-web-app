@@ -30,35 +30,36 @@
         <div class="tab-pane fade show active" id="logs-pane" role="tabpanel" tabindex="0">
             <div class="card mb-4 border-0 shadow-sm">
                 <div class="card-body">
-                    <form method="GET" action="{{ url_for('dashboard') }}" class="row g-3 align-items-end">
+                    <form method="GET" action="{{ url_for('dashboard') }}" class="row g-3 align-items-end filter-row">
                         <div class="col-md-3">
-                            <label class="form-label small fw-bold">Период</label>
-                            <select name="days" class="form-select form-select-sm">
+                            <label class="filter-label">Период</label>
+                            <select name="days" class="form-select form-select-sm custom-filter-input">
                                 <option value="1" {% if current_filters.days == 1 %}selected{% endif %}>За последние 24 часа</option>
                                 <option value="7" {% if current_filters.days == 7 %}selected{% endif %}>За неделю</option>
                                 <option value="30" {% if current_filters.days == 30 %}selected{% endif %}>За месяц</option>
                             </select>
                         </div>
+
                         <div class="col-md-3">
-                            <label class="form-label small fw-bold">Тип события</label>
-                            <select name="event_type" class="form-select form-select-sm">
+                            <label class="filter-label">Тип события</label>
+                            <select name="event_type" class="form-select form-select-sm custom-filter-input">
                                 <option value="ALL">Все типы</option>
-                                <option value="USER_ACTION" {% if current_filters.event_type == 'USER_ACTION' %}selected{% endif %}>Действия (ACTION)</option>
-                                <option value="ERROR" {% if current_filters.event_type == 'ERROR' %}selected{% endif %}>Ошибки (ERROR)</option>
-                                <option value="SECURITY" {% if current_filters.event_type == 'SECURITY' %}selected{% endif %}>Безопасность (SECURITY)</option>
-                                <option value="CONTENT_CHANGE" {% if current_filters.event_type == 'CONTENT_CHANGE' %}selected{% endif %}>Контент (CONTENT)</option>
+                                <option value="USER_ACTION" {% if current_filters.event_type == 'USER_ACTION' %}selected{% endif %}>Действия</option>
+                                <option value="ERROR" {% if current_filters.event_type == 'ERROR' %}selected{% endif %}>Ошибки</option>
                             </select>
                         </div>
+
                         <div class="col-md-3">
-                            <label class="form-label small fw-bold">ID Пользователя</label>
-                            <input type="number" name="user_id" class="form-select-sm form-control" 
-                                   placeholder="Напр: 5" value="{{ current_filters.user_id or '' }}">
+                            <label class="filter-label">ID Пользователя</label>
+                            <input type="number" name="user_id" class="form-control form-control-sm custom-filter-input" 
+                                placeholder="Напр: 5" value="{{ current_filters.user_id or '' }}">
                         </div>
-                        <div class="col-md-3 d-flex gap-2">
-                            <button type="submit" class="btn btn-sm btn-primary w-100">
-                                <i class="fas fa-search"></i> Найти
-                            </button>
-                            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary w-100">Сброс</a>
+
+                        <div class="col-md-3">
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-sm btn-primary w-100 filter-btn">Найти</button>
+                                <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary w-100 filter-btn">Сброс</a>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -116,6 +117,44 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <div class="pagination-controls mt-4">
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination justify-content-center">
+                            
+                            {# Кнопка "Назад" #}
+                            {% if pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('dashboard', page=pagination.current_page-1, **current_filters) }}">
+                                    <i class="fas fa-chevron-left"></i> Назад
+                                </a>
+                            </li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link">Назад</span></li>
+                            {% endif %}
+
+                            {# Инфо о страницах #}
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Страница {{ pagination.current_page }} из {{ pagination.total_pages }}
+                                </span>
+                            </li>
+
+                            {# Кнопка "Вперед" #}
+                            {% if pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('dashboard', page=pagination.current_page+1, **current_filters) }}">
+                                    Вперед <i class="fas fa-chevron-right"></i>
+                                </a>
+                            </li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link">Вперед</span></li>
+                            {% endif %}
+
+                        </ul>
+                    </nav>
+                    <p class="text-center text-muted small">Всего найдено записей: {{ pagination.total_logs }}</p>
                 </div>
             </div>
         </div>

@@ -1,24 +1,47 @@
-.table thead th {
-    font-weight: 600;
-    text-transform: uppercase;
+/* Общий сброс для строки фильтров */
+.filter-row {
+    margin-bottom: 0 !important;
+}
+
+/* Унифицируем лейблы, чтобы они занимали одинаковое место */
+.filter-label {
+    display: block;
     font-size: 0.75rem;
-    letter-spacing: 0.5px;
+    font-weight: 700;
+    margin-bottom: 5px;
+    color: #6c757d;
+    height: 18px; /* Фиксируем высоту заголовка */
 }
-.badge {
-    font-weight: 500;
-    padding: 0.5em 0.8em;
+
+/* Насильно уравниваем select, input и button */
+.custom-filter-input, 
+.filter-btn {
+    height: 34px !important; /* Увеличим до стандартного комфортного размера */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    margin: 0 !important;
 }
-.card {
-    border-radius: 12px;
+
+/* Убираем специфические отступы Bootstrap у кнопок, которые могут их "сажать" ниже */
+.filter-btn {
+    line-height: 1 !important;
+    padding: 0.25rem 0.5rem !important;
 }
-.table-hover tbody tr:hover {
-    background-color: rgba(0,0,0,0.02);
+
+/* Фикс для Chrome: убираем стрелочки, которые распирают input number изнутри */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none;
+    margin: 0;
 }
-.bar-hover:hover {
-        background-color: #0056b3 !important;
-        cursor: pointer;
-        filter: brightness(1.1);
-    }
-    .transition-all {
-        transition: all 0.3s ease;
-    }
+input[type=number] {
+    -moz-appearance: textfield;
+}
+
+/* Если кнопки все равно визуально "падают", добавим им микро-коррекцию */
+.filter-btn {
+    position: relative;
+    top: -1px; 
+}

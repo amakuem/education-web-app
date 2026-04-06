@@ -197,37 +197,55 @@ def dashboard(current_user_id):
     session['role'] = role
 
     if role == 'admin':
+        # 1. Получаем параметры из URL
+        page = request.args.get('page', 1, type=int)
+        per_page = 20  # Количество логов на одну страницу
         
         user_id_filter = request.args.get('user_id', type=int)
         event_type = request.args.get('event_type')
         days_ago = request.args.get('days', default=7, type=int)
         
+        # 2. Строим фильтр
         filter_query = {}
-        
-
         time_limit = datetime.utcnow() - timedelta(days=days_ago)
         filter_query["timestamp"] = {"$gte": time_limit}
         
-
         if user_id_filter:
             filter_query["user_id"] = user_id_filter
-            
-
         if event_type and event_type != 'ALL':
             filter_query["event_type"] = event_type
 
+        # 3. Считаем общее количество для пагинации
+        total_logs = logs_collection.count_documents(filter_query)
+        total_pages = (total_logs + per_page - 1) // per_page if total_logs > 0 else 1
 
-        logs = list(logs_collection.find(filter_query).sort("timestamp", -1).limit(100))
+        # 4. Получаем логи с отступом (skip) и лимитом
+        logs = list(logs_collection.find(filter_query)
+                    .sort("timestamp", -1)
+                    .skip((page - 1) * per_page)
+                    .limit(per_page))
         
         for log in logs:
             log['_id'] = str(log['_id'])
             
         reports = get_analytics_reports() 
         
+        # 5. Формируем объект пагинации для шаблона
+        pagination = {
+            'current_page': page,
+            'total_pages': total_pages,
+            'has_prev': page > 1,
+            'has_next': page < total_pages,
+            'total_logs': total_logs
+        }
             
         return render_template('admin_dashboard.html', 
                                logs=logs, 
-                               reports=reports,  # ПЕРЕДАЕМ СЮДА
+                               reports=reports,
+                               pagination=pagination, # ОБЯЗАТЕЛЬНО ПЕРЕДАЕМ
+                               now=datetime.now(),    # Чтобы не было ошибки Undefined
+                               timedelta=timedelta,   # Чтобы не было ошибки Undefined
+                               current_days=days_ago, # Для вкладки аналитики
                                current_filters={
                                    'user_id': user_id_filter,
                                    'event_type': event_type,
