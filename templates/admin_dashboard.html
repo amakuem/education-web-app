@@ -189,7 +189,8 @@
                             <h5 class="mb-0"> ТОП-10 активных пользователей</h5>
                             <span class="badge bg-primary">Всего действий</span>
                         </div>
-                        <div class="dropdown d-inline-block">
+                        
+                        <div class="dropdown d-inline-block mt-2 ms-3"> 
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                 <i class="fas fa-download"></i> Экспорт
                             </button>
@@ -221,7 +222,7 @@
                         <div class="card-header bg-white">
                             <h5 class="mb-0">Работа с контентом (CRUD)</h5>
                         </div>
-                        <div class="dropdown d-inline-block">
+                        <div class="dropdown d-inline-block mt-2 ms-3">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                 <i class="fas fa-download"></i> Экспорт
                             </button>
@@ -291,26 +292,26 @@
                                 {# Находим максимум для масштабирования высоты #}
                                 {% set max_count = reports.time_series | map(attribute='count') | list | max %}
                                 
-                                <div class="d-flex align-items-end justify-content-between bg-light rounded p-3" style="height: 250px; overflow-x: auto;">
+                                <div class="d-flex align-items-end justify-content-between bg-light rounded p-3" style="height: 300px; overflow-x: auto;">
                                     {% for point in reports.time_series %}
                                         {% set bar_height = (point.count / max_count * 100) | round | int if max_count > 0 else 0 %}
                                         
-                                        <div class="d-flex flex-column align-items-center flex-grow-1" style="min-width: 40px;">
-                                            {# Сама колонка гистограммы #}
-                                            <div class="bg-primary w-75 rounded-top d-flex align-items-end justify-content-center position-relative transition-all bar-hover" 
-                                                style="--bar-h: {{ bar_height or 0 }}%; height: var(--bar-h); min-height: 2px;"
-                                                data-bs-toggle="tooltip" 
-                                                title="{{ point._id }}: {{ point.count }} событий">
-                                                
-                                                {# Подпись количества над колонкой (только если есть место) #}
-                                                {% if bar_height > 15 %}
-                                                    <span class="text-white small fw-bold mb-1" style="font-size: 0.7rem;">{{ point.count }}</span>
-                                                {% endif %}
+                                        <div class="d-flex flex-column align-items-center flex-grow-1 h-100" style="min-width: 50px;">
+                                            
+                                            <div class="d-flex align-items-end justify-content-center w-100 flex-grow-1" style="height: 200px;">
+                                                <div class="bg-primary w-75 rounded-top d-flex align-items-end justify-content-center position-relative transition-all bar-hover" 
+                                                    style="height: {{ bar_height }}%; min-height: 2px;"
+                                                    data-bs-toggle="tooltip" 
+                                                    title="{{ point._id }}: {{ point.count }} событий">
+                                                    
+                                                    {% if bar_height > 15 %}
+                                                        <span class="text-white small fw-bold mb-1" style="font-size: 0.7rem;">{{ point.count }}</span>
+                                                    {% endif %}
+                                                </div>
                                             </div>
                                             
-                                            {# Подпись даты внизу #}
-                                            <div class="text-muted mt-2" style="font-size: 0.65rem; white-space: nowrap; transform: rotate(-45deg); margin-bottom: 15px;">
-                                                {{ point._id[5:] }} {# Обрезаем год для компактности (оставляем ММ-ДД) #}
+                                            <div class="text-muted mt-2 pt-2 border-top w-100 text-center" style="font-size: 0.65rem; min-height: 40px;">
+                                                {{ point._id[5:] if '-' in point._id else point._id }}
                                             </div>
                                         </div>
                                     {% endfor %}
@@ -329,7 +330,7 @@
                     <div class="card border-0 shadow-sm bg-light">
                         <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
                             <h5 class="mb-0 text-danger"><i class="fas fa-bolt"></i> Подозрительная активность</h5>
-                            <small class="text-muted">>20 действий в час</small>
+                            <small class="text-muted">>10 вход/выход в час</small>
                             <div class="dropdown d-inline-block">
                                 <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                     <i class="fas fa-download"></i> Экспорт

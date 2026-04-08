@@ -11,6 +11,12 @@ from datetime import datetime, timedelta
 import csv
 import io
 from flask import Response
+import threading
+import uuid
+import os
+
+APP_INSTANCE_ID = f"{uuid.uuid4().hex}_{os.getpid()}"
+print(f"[*] Запущен инстанс приложения с ID: {APP_INSTANCE_ID}")
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_for_stopik'
@@ -31,6 +37,37 @@ app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_REDIS'] = session_redis  # Используем твой существующий объект r
 Session(app)
+
+def redis_listener():
+    """Отдельный поток для прослушивания сообщений от других инстансов"""
+    pubsub = r.pubsub()
+    pubsub.subscribe('data_updates')
+    
+    for message in pubsub.listen():
+        if message['type'] == 'message':
+            data = json.loads(message['data'])
+            if data.get('sender_id') == APP_INSTANCE_ID:
+                continue
+            action = data.get('action')
+            
+            # Логика синхронизации: например, очистка локального кэша
+            if action == 'invalidate_cache':
+                key = data.get('key')
+                # Здесь можно добавить логику очистки чего-то специфичного
+                print(f"[*] Получен сигнал на очистку кэша: {key}")
+
+threading.Thread(target=redis_listener, daemon=True).start()
+
+def notify_data_change(action, key=None):
+    message = json.dumps({
+        'sender_id': APP_INSTANCE_ID,
+        'action': action,
+        'key': key,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    r.publish('data_updates', message)
+
+
 
 def save_log(event_type, action, user_id=None, details=None):
     """Универсальная функция для записи лога"""
@@ -357,6 +394,8 @@ def edit_course(current_user_id, course_id):
         r.delete("catalog:published_courses") # Сброс общего каталога
         r.delete(get_cache_key("user:dash_content", current_user_id)) # Сброс дашборда автора
         # ------------------------
+        cache_key = "catalog:published_courses"
+        notify_data_change('invalidate_cache', key=cache_key)
         
         flash("Курс успешно обновлен! Кэш очищен.")
         return redirect(url_for('dashboard'))
@@ -712,32 +751,33 @@ def get_analytics_reports(days=7):
     else:
         date_format = "%Y-%m-%d"
 
-    # 3. Временные тренды (Активность по дням)
+    
     reports['time_series'] = list(logs_collection.aggregate([
         { "$match": time_filter },
         {
-            # Добавляем конвертацию, если вдруг timestamp в базе — строка
+           
             "$addFields": {
                 "ts_obj": { "$toDate": "$timestamp" }
             }
         },
         {
             "$group": {
-                # Используем нашу переменную date_format
+                
                 "_id": { "$dateToString": { "format": date_format, "date": "$ts_obj" } },
                 "count": { "$sum": 1 }
             }
         },
-        # Сортировка важна, чтобы часы шли по порядку (00, 01, 02...)
+        
         {"$sort": {"_id": 1}}
     ]))
 
-    # 4. Аномалии (за выбранный период)
+    # 4. Аномалии (только LOGIN/LOGOUT за выбранный период)
     reports['anomalies'] = list(logs_collection.aggregate([
         {
             "$match": {
                 **time_filter,
-                # Исключаем пустые, несуществующие или системные ID (0)
+                # Фильтруем только события входа и выхода
+                "action": {"$regex": "LOGIN|LOGOUT", "$options": "i"},
                 "user_id": { 
                     "$exists": True, 
                     "$ne": None, 
@@ -754,7 +794,8 @@ def get_analytics_reports(days=7):
                 "actions": { "$sum": 1 }
             }
         },
-        {"$match": {"actions": {"$gt": 20}}},
+        # Если за один час пользователь залогинился/вышел более 10 раз — это аномалия
+        {"$match": {"actions": {"$gt": 10}}}, 
         {"$sort": {"actions": -1}}
     ]))
 
@@ -781,7 +822,8 @@ def admin_analytics(current_user_id):
         current_days=days, 
         current_filters=mock_filters,
         now=datetime.utcnow(), 
-        timedelta=timedelta
+        timedelta=timedelta,
+        pagination=None
     )
 
 @app.route('/admin/export/<report_type>/<format>')
